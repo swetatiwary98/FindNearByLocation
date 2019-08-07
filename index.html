@@ -1,0 +1,186 @@
+<html>
+<head>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+</head>
+<style type="text/css">
+#map {
+    height: 100%;
+}
+</style>
+
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6">
+                <form id="distance_form">
+                    <div class="form-group">
+                        <label>Origin: </label>
+                        <input id="from_places" class="form-control" placeholder="Enter a location" />
+                        <input id="origin" type="hidden" name="origin" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Destination: </label>
+                        <input id="to_places" class="form-control" placeholder="Enter a location" />
+                        <input id="destination" type="hidden" name="destination" required />
+                    </div>
+                    <input id="find" type="submit" value="Find" class="btn btn-primary" />
+                </form>
+            </div>
+        </div>
+    </div>
+    <div id="map"></div>
+    <div id="infowindow-content">
+        <img src="" width="16" height="16" id="place-icon">
+        <span id="place-name" class="title"></span><br>
+    </div>
+    <script>
+    var infowindow;
+    var map;
+    var pMarker = [];
+    var dirDisplay;
+    var dirService;
+    var center, service;
+
+    function initMap() {
+        map = new google.maps.Map(document.getElementById('map'), {
+            center: { lat: -33.8688, lng: 151.2195 },
+            zoom: 17
+        });
+
+        //set the current locaiton of the user
+        var initialLocation;
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(position) {
+                initialLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+                map.setCenter(initialLocation);
+            });
+        }
+
+        service = new google.maps.DistanceMatrixService();
+        dirDisplay = new google.maps.DirectionsRenderer();
+        dirService = new google.maps.DirectionsService();
+
+        dirDisplay.setMap(null);
+
+        var from_places = new google.maps.places.Autocomplete(document.getElementById('from_places'));
+        from_places.bindTo('bounds', map);
+
+        infowindow = new google.maps.InfoWindow();
+
+        var infowindowContent = document.getElementById('infowindow-content');
+        infowindow.setContent(infowindowContent);
+
+        var marker = new google.maps.Marker({
+            map: map,
+            position: initialLocation,
+            anchorPoint: new google.maps.Point(0, -29)
+        });
+        center = map.center;
+        from_places.addListener('place_changed', function() {
+            infowindow.close();
+            var place = from_places.getPlace();
+            if (place.geometry.viewport) {
+                map.fitBounds(place.geometry.viewport);
+            } else {
+                map.setCenter(place.geometry.location);
+                map.setZoom(17);
+            }
+
+            center = place.geometry.location;
+            marker.setPosition(place.geometry.location);
+            marker.setVisible(true);
+
+            infowindowContent.children['place-icon'].src = place.icon;
+            infowindowContent.children['place-name'].textContent = place.name;
+            infowindow.open(map, marker);
+
+            google.maps.event.addListener(marker, 'click', function() {
+                infowindow.open(map, marker);
+            });
+        });
+    }
+
+    document.getElementById('find').addEventListener('click', function(e) {
+        e.preventDefault();
+        dirDisplay.setMap(null);
+        for (var i = 0; i < pMarker.length; i++) {
+            pMarker[i].setMap(null);
+            pMarker[i] = null;
+        }
+        call();
+    });
+
+    function call() {
+        pMarker = [];
+        var service = new google.maps.places.PlacesService(map);
+        service.textSearch({
+            location: map.center,
+            radius: 500,
+            query: document.getElementById('to_places').value
+        }, function(results, status) {
+            if (status == google.maps.places.PlacesServiceStatus.OK) {
+                for (var i = 0; i < results.length; i++) {
+                    var pl = results[i];
+                    createMarker(results[i]);
+                }
+            }
+        });
+    }
+
+    function createMarker(place) {
+        var marker, distance_in_kilo;
+        dirDisplay.setMap(map);
+        new Promise(function(resolve, reject) {
+            marker = new google.maps.Marker({
+                map: map,
+                position: place.geometry.location
+            });
+            resolve();
+        }).then(function() {
+            pMarker.push(marker);
+        }).then(function() {
+
+
+            google.maps.event.addListener(marker, 'click', function() {
+
+                dirService.route({
+                    origin: center,
+                    destination: marker.getPosition(),
+                    travelMode: 'DRIVING'
+                }, function(result, status) {
+                    if (status == 'OK') {
+                        dirDisplay.setDirections(result);
+                    }
+                });
+
+                service.getDistanceMatrix({
+                    origins: [center],
+                    destinations: [marker.getPosition()],
+                    travelMode: 'DRIVING',
+                }, function(response, status) {
+                    if (status != google.maps.DistanceMatrixStatus.OK) {
+                    	alert("Error");
+                    } else {
+                        var origin = response.originAddresses[0];
+                        var destination = response.destinationAddresses[0];
+                        if (response.rows[0].elements[0].status === "ZERO_RESULTS") {
+                            alert("get a plane");
+                        } else {
+                            var distance = response.rows[0].elements[0].distance;
+                            var duration = response.rows[0].elements[0].duration;
+                            var distance_in_kilo = distance.value / 1000;
+                            var duration_text = duration.text;
+                            infowindow.setContent(`${place.name} \n duration: ${duration_text} \n distance: ${distance_in_kilo}km`);
+                        }
+                    }
+                });
+                infowindow.open(map, this);
+            });
+
+        });
+    }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?libraries=places&callback=initMap&key=AIzaSyD4QzjySSpzR8uURwC6TinNrylGlo7Us8g" async defer type="text/javascript"></script>
+</body>
+
+</html>
